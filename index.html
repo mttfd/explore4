@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>WebGL</title>
+		<meta charset = "uft-8">
+		<script type="text/javascript" src = "glMatrix.js"></script>
+		<script  id  = "shader-vs" type="x-shader/x-vertex">
+			//input
+			attribute vec3 aVertexPosition;
+			attribute vec4 aVertexColor;//color is vec4
+
+			uniform mat4 uMVMatrix;
+			uniform mat4 uPMatrix;
+
+			//output
+			varying vec4 vColor;
+
+			void main() {
+				gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+				vColor = aVertexColor;
+			}
+
+		</script>
+		<script id = "shader-fs" type="x-shader/x-fragment">
+			precision mediump float;
+
+			varying vec4 vColor;
+			void main() {
+				gl_FragColor = vColor;
+			}
+		</script>
+		<script type="text/javascript">
+			var gl;
+			var canvas;
+			var shaderProgram;
+			var cubeVertexPositionBuffer;
+			var cubeVertexIndexBuffer;
+
+			var modelViewMatrix;
+			var projectionMatrix;
+			var modelViewMatrixStack;
+
+			function createGLContext(canvas) {
+			  var names = ["webgl", "experimental-webgl"];
+			  var context = null;
+			  for (var i=0; i < names.length; i++) {
+			    try {
+			      context = canvas.getContext(names[i]);
+			    } catch(e) {}
+			    if (context) {
+			      break;
+			    }
+			  }
+			  if (context) {
+			    context.viewportWidth = canvas.width;
+			    context.viewportHeight = canvas.height;
+			  } else {
+			    alert("Failed to create WebGL context!");
+			  }
+			  return context;
+			}
+
+
+			function loadShaderFromDOM(id) {
+			  var shaderScript = document.getElementById(id);
+
+			  if (!shaderScript) {
+			    return null;
+			  }
+
+			  var shaderSource = "";
+			  var currentChild = shaderScript.firstChild;
+			  while (currentChild) {
+			    if (currentChild.nodeType == 3) { // 3 corresponds to TEXT_NODE
+			      shaderSource += currentChild.textContent;
+			    }
+			    currentChild = currentChild.nextSibling;
+			  }
+
+			  var shader;
+			  if (shaderScript.type == "x-shader/x-fragment") {
+			    shader = gl.createShader(gl.FRAGMENT_SHADER);
+			  } else if (shaderScript.type == "x-shader/x-vertex") {
+			    shader = gl.createShader(gl.VERTEX_SHADER);
+			  } else {
+			    return null;
+			  }
+
+			  gl.shaderSource(shader, shaderSource);
+			  gl.compileShader(shader);
+
+			  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+			    alert(gl.getShaderInfoLog(shader));
+			    return null;
+			  }
+			  return shader;
+			}
+
+			function setupShaders() {
+			  var vertexShader = loadShaderFromDOM("shader-vs");
+			  var fragmentShader = loadShaderFromDOM("shader-fs");
+
+			  shaderProgram = gl.createProgram();
+			  gl.attachShader(shaderProgram, vertexShader);
+			  gl.attachShader(shaderProgram, fragmentShader);
+			  gl.linkProgram(shaderProgram);
+
+			  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+			    alert("Failed to setup shaders");
+			  }
+
+			  gl.useProgram(shaderProgram);
+
+			  shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+			  shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, "aVertexColor");
+			  shaderProgram.uniformMVMatrix = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+			  shaderProgram.uniformProjMatrix = gl.getUniformLocation(shaderProgram, "uPMatrix");
+
+			  gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+			  modelViewMatrix = mat4.create();
+			  projectionMatrix = mat4.create();
+			  modelViewMatrixStack = [];
+			}
+
+			function pushModelViewMatrix() {
+			  var copyToPush = mat4.create(modelViewMatrix);
+			  modelViewMatrixStack.push(copyToPush);
+			}
+
+			function popModelViewMatrix() {
+			  if (modelViewMatrixStack.length == 0) {
+			    throw "Error popModelViewMatrix() - Stack was empty ";
+			  }
+			  modelViewMatrix = modelViewMatrixStack.pop();
+			}
+
+			function setupCubeBuffers() {
+				cubeVertexPositionBuffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+
+				var cubeVertexPosition = [
+					// Front face
+					1.0,  1.0,  1.0,
+					-1.0,  1.0,  1.0,
+					-1.0, -1.0,  1.0,
+					1.0, -1.0,  1.0,
+
+					// Back face
+					1.0,  1.0, -1.0,
+					-1.0,  1.0, -1.0,
+					-1.0, -1.0, -1.0,
+					1.0, -1.0, -1.0,
+
+					// Left face
+					-1.0,  1.0,  1.0,
+					-1.0,  1.0, -1.0,
+					-1.0, -1.0, -1.0,
+					-1.0, -1.0,  1.0,
+
+					// Right face
+					1.0,  1.0,  1.0,
+					1.0, -1.0,  1.0,
+					1.0, -1.0, -1.0,
+					1.0,  1.0, -1.0,
+
+					// Top face
+					1.0,  1.0,  1.0,
+					1.0,  1.0, -1.0,
+					-1.0,  1.0, -1.0,
+					-1.0,  1.0,  1.0,
+
+					// Bottom face
+					1.0, -1.0,  1.0,
+					1.0, -1.0, -1.0,
+					-1.0, -1.0, -1.0,
+					-1.0, -1.0,  1.0,
+				];
+
+				gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cubeVertexPosition),
+                gl.STATIC_DRAW);
+				cubeVertexPositionBuffer.itemSize = 3;
+				cubeVertexPositionBuffer.numberOfItems = 24;
+
+				cubeVertexIndexBuffer = gl.createBuffer();
+  				gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+
+				var cubeVertexIndices = [
+		            0, 1, 2,      0, 2, 3,    // Front face
+		            4, 6, 5,      4, 7, 6,    // Back face
+		            8, 9, 10,     8, 10, 11,  // Left face
+		            12, 13, 14,   12, 14, 15, // Right face
+		            16, 17, 18,   16, 18, 19, // Top face
+		            20, 22, 21,   20, 23, 22  // Bottom face
+		        ];
+
+				gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(cubeVertexIndices), gl.STATIC_DRAW);
+				cubeVertexIndexBuffer.itemSize = 1; //why !3
+				cubeVertexIndexBuffer.numberOfItems = 36; // why !12
+			}
+
+			function uploadModelViewMatrixToShader() {
+				gl.uniformMatrix4fv(shaderProgram.uniformMVMatrix, false, modelViewMatrix);
+			}
+
+			function uploadProjectionMatrixToShader() {
+				gl.uniformMatrix4fv(shaderProgram.uniformProjMatrix, false, projectionMatrix);
+			}
+
+			function setupBuffers() {
+				setupCubeBuffers();
+			}
+
+			function drawCube(r, g, b, a) {
+				gl.disableVertexAttribArray(shaderProgram.vertexColorAttribute);
+				// Set color
+				gl.vertexAttrib4f(shaderProgram.vertexColorAttribute, r, g, b, a);
+
+				gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+				gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, cubeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+				gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+
+				gl.drawElements(gl.TRIANGLES, cubeVertexIndexBuffer.numberOfItems, gl.UNSIGNED_SHORT, 0);
+			}
+
+			var param = {
+				r:0.0,
+				g:0.0,
+				b:0.0,
+				a:1.0,
+				x:0,
+				y:0,
+				z:10,
+				ofx:0,
+			}
+
+			function draw() {
+
+				gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+				gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+				mat4.perspective(60, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, projectionMatrix);
+				mat4.identity(modelViewMatrix);
+				mat4.lookAt([param.x, param.y, param.z],[0, 0, 0], [0, 1, 0], modelViewMatrix);
+
+				uploadModelViewMatrixToShader();
+				uploadProjectionMatrixToShader();
+
+
+
+				// Draw box on the top of the table
+
+				mat4.translate(modelViewMatrix, [param.ofx, 0.0 ,0.0], modelViewMatrix);
+				mat4.scale(modelViewMatrix, [1.0, 1.0, 1.0], modelViewMatrix);
+				uploadModelViewMatrixToShader();
+				drawCube(param.r, param.g, param.b, param.a);
+
+				if(param.b <= 1) {
+					param.b += 0.008;
+				}
+
+
+				param.ofx += 0.02;
+
+				requestAnimationFrame(draw);
+
+			}
+
+			function startup() {
+				canvas = document.getElementById("webglcanvas");
+				gl = createGLContext(canvas);
+				setupShaders();
+				setupBuffers();
+				gl.clearColor(0.0, 0.0, 0,0, 1.0);
+				gl.enable(gl.DEPTH_TEST);
+
+				draw();
+			}
+
+			window.onload = startup;
+		</script>
+	</head>
+	<body>
+		<canvas id = "webglcanvas" width = "600" height = "600"></canvas>
+	</body>
+</html>
